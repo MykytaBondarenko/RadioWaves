@@ -7,6 +7,8 @@ import controlP5.*;
 
 int pointA_x = 420;
 int pointA_y = 270;
+int pointB_x = 270;
+int pointB_y = 120;
 ControlP5 cp5;
 CheckBox checkBox;
 PFont font1;
@@ -14,10 +16,14 @@ ControlFont myFont;
 boolean stateBPSK = false;
 boolean stateQPSK = false;
 boolean state16QAM = false;
+boolean stateVectorB = false;
+boolean stateVectorSum = false;
+boolean dragA = false;
+boolean dragB = false;
 
 void setup() {
   //printArray(PFont.list());
-  size(1080, 580);
+  size(1080, 620);
   background(200);
   font1 = createFont("ArialMT", 12);
   myFont = new ControlFont(font1);
@@ -30,10 +36,13 @@ void setup() {
     .setColorForeground(color(0, 120, 255))
     .setColorActive(color(150, 100, 230))
     .setColorLabel(color(0))
-    .setSpacingColumn(100)
+    .setSpacingColumn(150)
+    .setSpacingRow(10)
     .addItem("Show BPSK", 1)
     .addItem("Show QPSK", 2)
-    .addItem("Show 16QAM", 3);
+    .addItem("Show 16QAM", 3)
+    .addItem("Show Vector B", 4)
+    .addItem("Show Sum Vector", 5);
     
    for (Toggle t: checkBox.getItems()) {
      t.getCaptionLabel().setFont(font1);
@@ -42,16 +51,34 @@ void setup() {
 
 void draw() {
   drawCoordinatePlane();
-  drawVector(pointA_x, pointA_y);
+  drawVector(pointA_x, pointA_y, color(255, 0, 0));
   float amplitude = distanceTwoPoints(270, 270, pointA_x, pointA_y) * 1 / 250;
   float shift = -atan(((float)(pointA_y - 270)) / ((float)(pointA_x - 270)));
   if (pointA_x < 270) shift += Math.PI;
-  drawWave(amplitude, shift);
+  drawWave(amplitude, shift, color(255, 0, 0));
+  
+  float amplitudeB = 0;
+  float shiftB = 0;
+  if (stateVectorB) {
+    drawVector(pointB_x, pointB_y, color(0, 0, 255));
+    amplitudeB = distanceTwoPoints(270, 270, pointB_x, pointB_y) * 1 / 250;
+    shiftB = -atan(((float)(pointB_y - 270)) / ((float)(pointB_x - 270)));
+    if (pointB_x < 270) shiftB += Math.PI;
+    drawWave(amplitudeB, shiftB, color(0, 0, 255));
+  }
+  
+  if (stateVectorSum) {
+    drawSumWave(amplitude, shift, amplitudeB, shiftB, color(0, 255, 0));
+  }
   
   fill(0);
   textSize(30);
-  text("Amplitude: " + Math.round(amplitude * 1000.0) / 1000.0, 560, 560);
-  text("Shift: " + Math.round(shift * 1000.0) / 1000.0 + " radians", 800, 560);
+  text("Amplitude A: " + Math.round(amplitude * 1000.0) / 1000.0, 560, 560);
+  text("Shift A: " + Math.round(shift * 1000.0) / 1000.0 + " radians", 800, 560);
+  if (stateVectorB) {
+    text("Amplitude B: " + Math.round(amplitudeB * 1000.0) / 1000.0, 560, 600);
+    text("Shift B: " + Math.round(shiftB * 1000.0) / 1000.0 + " radians", 800, 600);  
+  }
 }
 
 void drawCoordinatePlane() {
@@ -113,27 +140,38 @@ void drawCoordinatePlane() {
   if (state16QAM) draw16QAM();
 }
 
-void drawPoint(int x, int y) {
+void drawPoint(int x, int y, color c) {
   stroke(0);
   strokeWeight(1);
-  fill(255, 0, 0);
+  fill(c);
   circle(x, y, 10);
 }
 
-void drawVector(int x, int y) {
+void drawVector(int x, int y, color c) {
   strokeWeight(1.5);
-  stroke(255, 0, 0);
+  stroke(c);
   line(270, 270, x, y);
-  drawPoint(x, y);
+  drawPoint(x, y, c);
 }
 
-void drawWave(float A, float shift) { // shift is in radians
+void drawWave(float A, float shift, color c) { // shift is in radians
   strokeWeight(0);
+  fill(c);
   for (int x = 0; x < 360; x++) { // x is in degrees, so we need to convert them to radians
     float y = A * sin(((float)x * 2 * (float)Math.PI) / 360 + shift);
     float i = 560 + ((float)x / 360) * 500;
     float j = 20 + 500 - ((y + 1) / 2) * 500;
-    fill(255, 0, 0);
+    if (withinRightCoordinatePlane((int)i, (int)j)) circle(i, j, 5);
+  }
+}
+
+void drawSumWave (float A1, float shift1, float A2, float shift2, color c) {
+  strokeWeight(0);
+  fill(c);
+  for (int x = 0; x < 360; x++) {
+    float y = A1 * sin(((float)x * 2 * (float)Math.PI) / 360 + shift1) + A2 * sin(((float)x * 2 * (float)Math.PI) / 360 + shift2);
+    float i = 560 + ((float)x / 360) * 500;
+    float j = 20 + 500 - ((y + 1) / 2) * 500;
     if (withinRightCoordinatePlane((int)i, (int)j)) circle(i, j, 5);
   }
 }
@@ -145,9 +183,15 @@ float distanceTwoPoints(int x1, int y1, int x2, int y2) {
 }
 
 void mouseDragged() {
-  if (distanceTwoPoints(pointA_x, pointA_y, mouseX, mouseY) <= 15 && withinLeftCoordinatePlane()) {
+  if (!dragB && distanceTwoPoints(pointA_x, pointA_y, mouseX, mouseY) <= 15 && withinLeftCoordinatePlane()) {
     pointA_x = mouseX;
     pointA_y = mouseY;
+    dragA = true;
+  }
+  if (!dragA && stateVectorB && distanceTwoPoints(pointB_x, pointB_y, mouseX, mouseY) <= 15 && withinLeftCoordinatePlane()) {
+    pointB_x = mouseX;
+    pointB_y = mouseY;
+    dragB = true;
   }
 }
 
@@ -155,6 +199,13 @@ void mousePressed() {
   stateBPSK = checkBox.getState("Show BPSK");
   stateQPSK = checkBox.getState("Show QPSK");
   state16QAM = checkBox.getState("Show 16QAM");
+  stateVectorB = checkBox.getState("Show Vector B");
+  stateVectorSum = checkBox.getState("Show Sum Vector");
+}
+
+void mouseReleased() {
+  dragA = false;
+  dragB = false;
 }
 
 boolean withinLeftCoordinatePlane() {
